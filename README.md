@@ -90,6 +90,11 @@ It's plain bash and SQL: no framework to install, nothing to
 authenticate. Read the scripts first; they touch Postgres and ZFS as
 root.
 
+## TODOs
+
+- [ ] Share presentation
+- [ ] Srenghten managed solutions (like anonymization options)
+
 ## Links
 
 TBD 
