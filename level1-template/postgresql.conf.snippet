@@ -1,0 +1,8 @@
+# Add to postgresql.conf on the instance used for cloning.
+# Requires PostgreSQL 18+ and filesystem with reflink support
+# (XFS, Btrfs, ZFS 2.3+, APFS).
+#
+# Without this, FILE_COPY does byte-for-byte copy: ~67s on 6GB database.
+# With this, FILE_COPY uses reflinks: ~200ms on same database.
+
+file_copy_method = clone

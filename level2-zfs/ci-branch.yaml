@@ -1,0 +1,54 @@
+# Copy to .github/workflows/. Self-contained: builds a file-backed ZFS
+# pool on the runner, seeds a @nightly snapshot, then branches per PR.
+# Split into two workflows and the pool won't survive between them:
+# runners are ephemeral.
+name: branch-per-pr
+
+on:
+  pull_request:
+
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Set up ZFS (file-backed, no spare device needed)
+        run: |
+          sudo apt-get install -y zfsutils-linux
+          sudo truncate -s 20G /zfs.img
+          sudo zpool create -f tank /zfs.img
+          sudo zfs set recordsize=8K tank
+          # off by default on Ubuntu 24.04's ZFS 2.2.x, see setup-pool.sh
+          echo 1 | sudo tee /sys/module/zfs/parameters/zfs_bclone_enabled
+
+      - name: Seed Postgres and take @nightly snapshot
+        run: |
+          sudo zfs create tank/pgdata
+          sudo chown postgres:postgres /tank/pgdata
+          sudo -u postgres initdb -D /tank/pgdata
+          sudo -u postgres pg_ctl start -D /tank/pgdata -o "-p 5432 -c archive_mode=off" -w
+          # load your schema + masked data here, then:
+          sudo -u postgres psql -p 5432 -c "CHECKPOINT;"
+          sudo zfs snapshot tank/pgdata@nightly
+
+      - name: Branch per PR
+        run: |
+          sudo zfs clone tank/pgdata@nightly tank/pgdata-${{ github.run_id }}
+          sudo rm -f /tank/pgdata-${{ github.run_id }}/postmaster.pid
+          sudo -u postgres pg_ctl start \
+            -D /tank/pgdata-${{ github.run_id }} \
+            -o "-p 5433 -c archive_mode=off" \
+            -w
+          psql -p 5433 -U postgres postgres -f level2-zfs/sanitize.sql
+
+      - name: Run tests
+        run: make test
+        env:
+          DATABASE_URL: postgresql://postgres@localhost:5433/myapp
+
+      - name: Destroy branch
+        if: always()
+        run: |
+          sudo -u postgres pg_ctl stop -D /tank/pgdata-${{ github.run_id }} -m fast || true
+          sudo zfs destroy tank/pgdata-${{ github.run_id }} || true

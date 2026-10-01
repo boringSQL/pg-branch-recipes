@@ -1,0 +1,12 @@
+.DS_Store
+
+bin/
+vendor/
+
+*.dump
+*.log
+*.img
+tmp/
+
+.env
+.env.local
